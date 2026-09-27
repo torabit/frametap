@@ -83,10 +83,7 @@ mod probe {
             devices.len()
         );
         for info in devices {
-            let identified = match product_name(info.product_id()) {
-                Some(name) => name,
-                None => "未知の PID",
-            };
+            let identified = product_name(info.product_id()).unwrap_or("未知の PID");
             println!(
                 "  PID {:#06X} [{}] usage_page={:#06X} usage={:#06X} interface={} product={:?} manufacturer={:?}",
                 info.product_id(),
