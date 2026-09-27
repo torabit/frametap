@@ -3,3 +3,4 @@
 //! OS と hidapi に接する層はバイナリ側に置き、ここには実機なしでテストできるものだけを入れる。
 
 pub mod report_decode;
+pub mod timeline;
