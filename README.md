@@ -77,6 +77,19 @@ There is no console window, so a panic writes `frametap-panic.txt` next to the e
 
 If the exe cannot write to its own folder, the file goes to your temp directory.
 
+## Probing a controller that is not supported yet
+
+`hid_probe.exe`, attached to every release, reads a device and prints the raw reports. Use it to find out whether an unsupported pad speaks a format this tool could decode.
+
+```
+hid_probe.exe --list                     list every connected HID device
+hid_probe.exe --vid 0x0F0D --pid 0x0084  open one of them and dump its reports
+```
+
+`--list` only enumerates; it never opens a device, so it will not fight with a game over one. The dump prints the first three reports as hex and the min, median and max interval between 300 reports.
+
+Open an issue with that output and the controller's name.
+
 ## Limitations
 
 - Windows only. The HID and timing code has no other implementation
