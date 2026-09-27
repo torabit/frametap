@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+bitflags = "2.13.2"
 
 [target."cfg(windows)".dependencies]
 hidapi = "2.6.7"
