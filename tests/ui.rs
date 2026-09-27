@@ -7,8 +7,8 @@ use frametap::history::{History, DEFAULT_RETAIN_US, DEFAULT_TRIAL_GAP_US};
 use frametap::report_decode::{Buttons, Direction};
 use frametap::timeline::{EventKind, InputEvent, Target};
 use frametap::ui::{
-    hold_text, lines, press_text, recent_trials, row_text, show, Settings, Status,
-    DEFAULT_TRIALS_SHOWN, HOLD_OVERFLOW_TEXT,
+    hold_text, lines, press_text, recent_trials, row_text, show, status_text, title_text, Settings,
+    Status, DEFAULT_TRIALS_SHOWN, HOLD_OVERFLOW_TEXT,
 };
 
 /// 60fps の 1F。
@@ -288,6 +288,29 @@ fn a_new_connection_starts_without_a_scale() {
     assert_eq!(disconnected.device_name, None);
     assert_eq!(disconnected.scale_us_per_tick, None);
     assert_eq!(disconnected.scale_warning, None);
+}
+
+/// 写真が返ってきたときに、どの build を動かしたのかを写真だけで決められる。
+#[test]
+fn the_title_carries_the_crate_version() {
+    let title = title_text();
+
+    assert!(title.starts_with("frametap "), "{title}");
+    assert!(title.contains(env!("CARGO_PKG_VERSION")), "{title}");
+}
+
+#[test]
+fn the_status_line_names_the_device_or_the_reason() {
+    assert_eq!(
+        status_text(&Status::connected("DualSense".to_owned())),
+        "connected: DualSense"
+    );
+    assert_eq!(
+        status_text(&Status::disconnected("read failed".to_owned())),
+        "disconnected: read failed"
+    );
+    // 理由が無いのは起動直後だけになる。
+    assert_eq!(status_text(&Status::default()), "disconnected");
 }
 
 /// 描画がウィンドウ無しで最後まで通る。列の確保と幅の計算が壊れていれば panic する。

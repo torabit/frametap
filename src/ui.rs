@@ -23,6 +23,10 @@ pub const DEFAULT_TRIALS_SHOWN: usize = 5;
 /// 離した区間を行にするかの既定値。
 pub const DEFAULT_SHOW_RELEASED: bool = false;
 
+/// 画面に出す版。実機から返ってくるのは写真なので、どの build を動かしたのかを
+/// 写真だけで決められるようにする。問い合わせを 1 往復減らす。
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 /// 持続 F をそのまま出す上限。これを超えたら [`HOLD_OVERFLOW_TEXT`] にする。
 /// 押しっぱなしの行が桁を増やすと、右端の列幅が動いて他の行の数字が読みにくくなる。
 const HOLD_FRAMES_CAP: f64 = 99.0;
@@ -213,16 +217,16 @@ pub fn show(
 /// 但し書きは条件付きで隠さない。1F ずれを読んでいる最中に、表示の幅が
 /// どこから来ているかを思い出せる状態にしておく。
 fn show_header(ui: &mut Ui, status: &Status, settings: &Settings, notices: &[String]) {
-    match &status.device_name {
-        Some(name) => ui.label(format!("connected: {name}")),
-        None => ui.label(
-            RichText::new(match &status.disconnected_reason {
-                Some(reason) => format!("disconnected: {reason}"),
-                None => "disconnected".to_owned(),
-            })
-            .color(Color32::LIGHT_RED),
-        ),
-    };
+    // 版と接続を同じ行に置く。窓は縦に狭く、但し書きだけで数行を使う。
+    ui.horizontal(|ui| {
+        ui.label(title_text());
+
+        let text = RichText::new(status_text(status));
+        match status.device_name {
+            Some(_) => ui.label(text),
+            None => ui.label(text.color(Color32::LIGHT_RED)),
+        };
+    });
 
     match status.scale_us_per_tick {
         Some(scale) => ui.label(format!("device clock: {scale:.4} us/tick")),
@@ -292,6 +296,20 @@ pub fn row_text(names: &[&str], press_frames: Option<f64>, hold_frames: f64) -> 
 /// 名前を左詰め、F の 2 欄を右詰めにして 1 行にする。
 fn columns(names: &str, press: &str, hold: &str) -> String {
     format!("{names:<NAMES_WIDTH$}{press:>FRAMES_WIDTH$}{hold:>FRAMES_WIDTH$}")
+}
+
+/// 画面の左上に出す名前と版。
+pub fn title_text() -> String {
+    format!("frametap {VERSION}")
+}
+
+/// 接続の状態を 1 行にする。
+pub fn status_text(status: &Status) -> String {
+    match (&status.device_name, &status.disconnected_reason) {
+        (Some(name), _) => format!("connected: {name}"),
+        (None, Some(reason)) => format!("disconnected: {reason}"),
+        (None, None) => "disconnected".to_owned(),
+    }
 }
 
 /// 押下 F の表示。押されていない区間では空欄にする。
