@@ -37,6 +37,7 @@ fn settings_from(config: &Config) -> ui::Settings {
     ui::Settings {
         fps: config.fps,
         trials_shown: config.trials_shown,
+        show_released: config.show_released,
     }
 }
 

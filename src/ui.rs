@@ -10,7 +10,7 @@
 //!
 //! [`History`]: crate::history::History
 
-use egui::{Align, Color32, Frame, Layout, RichText, ScrollArea, Ui, Vec2};
+use egui::{Color32, Frame, RichText, ScrollArea, Ui};
 
 use crate::history::{History, Trial};
 
@@ -19,6 +19,9 @@ pub const DEFAULT_FPS: f64 = 60.0;
 
 /// 縦リストに積む試行数の既定値。
 pub const DEFAULT_TRIALS_SHOWN: usize = 5;
+
+/// 離した区間を行にするかの既定値。
+pub const DEFAULT_SHOW_RELEASED: bool = false;
 
 /// 持続 F をそのまま出す上限。これを超えたら [`HOLD_OVERFLOW_TEXT`] にする。
 /// 押しっぱなしの行が桁を増やすと、右端の列幅が動いて他の行の数字が読みにくくなる。
@@ -33,17 +36,20 @@ const BLANK_TEXT: &str = "";
 /// USB 接続のレポート間隔。押下 F の量子化誤差はこの幅に収まる。
 const USB_REPORT_INTERVAL_US: f64 = 4_000.0;
 
-/// F の列の幅。3 桁と小数第 1 位が入る。
-const FRAMES_COLUMN_WIDTH: f32 = 52.0;
+/// 名前の欄の文字数。同時押し 4 つ (`L1 R1 DP8 Cross` で 15 文字) が収まる。
+const NAMES_WIDTH: usize = 20;
+
+/// F の欄の文字数。`99.0` と見出しの `press` が収まる。
+const FRAMES_WIDTH: usize = 6;
 
 /// 名前の欄の見出し。
-const NAMES_HEADER: &str = "入力";
+const NAMES_HEADER: &str = "input";
 
 /// 押下 F の欄の見出し。
-const PRESS_HEADER: &str = "押下F";
+const PRESS_HEADER: &str = "press";
 
 /// 持続 F の欄の見出し。
-const HOLD_HEADER: &str = "持続F";
+const HOLD_HEADER: &str = "hold";
 
 /// 取りこぼしのあった行の背景。
 const GAP_FILL: Color32 = Color32::from_rgb(70, 70, 70);
@@ -58,6 +64,8 @@ pub struct Settings {
     pub fps: f64,
     /// 縦リストに積む試行数。
     pub trials_shown: usize,
+    /// 何も押していない区間を行にするか。
+    pub show_released: bool,
 }
 
 impl Default for Settings {
@@ -65,6 +73,7 @@ impl Default for Settings {
         Self {
             fps: DEFAULT_FPS,
             trials_shown: DEFAULT_TRIALS_SHOWN,
+            show_released: DEFAULT_SHOW_RELEASED,
         }
     }
 }
@@ -136,6 +145,12 @@ pub fn lines(trials: &[Trial], settings: &Settings) -> Vec<Line> {
     for trial in trials.iter().rev() {
         let mut starts_trial = true;
         for row in trial.rows() {
+            // 離した区間の行は持続 F しか持たない。読む行数が倍になるだけなので既定では出さない。
+            // 入力と入力の間合いは、押下 F の差で読める。
+            if row.held.is_empty() && !settings.show_released {
+                continue;
+            }
+
             lines.push(Line {
                 names: row
                     .held
@@ -199,19 +214,19 @@ pub fn show(
 /// どこから来ているかを思い出せる状態にしておく。
 fn show_header(ui: &mut Ui, status: &Status, settings: &Settings, notices: &[String]) {
     match &status.device_name {
-        Some(name) => ui.label(format!("接続: {name}")),
+        Some(name) => ui.label(format!("connected: {name}")),
         None => ui.label(
             RichText::new(match &status.disconnected_reason {
-                Some(reason) => format!("未接続: {reason}"),
-                None => "未接続".to_owned(),
+                Some(reason) => format!("disconnected: {reason}"),
+                None => "disconnected".to_owned(),
             })
             .color(Color32::LIGHT_RED),
         ),
     };
 
     match status.scale_us_per_tick {
-        Some(scale) => ui.label(format!("デバイス時刻の単位: {scale:.4}µs/tick")),
-        None => ui.label("デバイス時刻の単位: 未取得"),
+        Some(scale) => ui.label(format!("device clock: {scale:.4} us/tick")),
+        None => ui.label("device clock: not measured yet"),
     };
 
     if let Some(warning) = &status.scale_warning {
@@ -220,11 +235,11 @@ fn show_header(ui: &mut Ui, status: &Status, settings: &Settings, notices: &[Str
 
     let frame_us = settings.frame_us();
     ui.label(format!(
-        "USB のレポート間隔 4ms が量子化誤差になるため、F は ±{:.2}F の幅を持つ",
+        "USB reports every 4ms, so each frame count carries +/-{:.2}F of error",
         USB_REPORT_INTERVAL_US / frame_us
     ));
     ui.label(format!(
-        "{:.0}fps の独自グリッドで数えるので、ゲーム内のフレーム数とは最大 1F ずれる",
+        "counted on a private {:.0}fps grid, may differ from the game by up to 1F",
         settings.fps.max(MIN_FPS)
     ));
 
@@ -234,16 +249,13 @@ fn show_header(ui: &mut Ui, status: &Status, settings: &Settings, notices: &[Str
     }
 }
 
-/// どの欄が何かを示す見出し。行と同じ割り付けを使うので、列とずれない。
+/// どの欄が何かを示す見出し。行と同じ組み方なので、列とずれない。
 fn show_column_headers(ui: &mut Ui) {
-    show_columns(
-        ui,
-        |ui| {
-            ui.label(header_text(NAMES_HEADER));
-        },
-        header_text(PRESS_HEADER),
-        header_text(HOLD_HEADER),
-    );
+    ui.label(header_text(&columns(
+        NAMES_HEADER,
+        PRESS_HEADER,
+        HOLD_HEADER,
+    )));
 }
 
 /// 見出しの文字。数字より小さく弱くして、行の数字から視線を奪わない。
@@ -260,44 +272,26 @@ fn show_line(ui: &mut Ui, line: &Line) {
     };
 
     frame.show(ui, |ui| {
-        show_columns(
-            ui,
-            |ui| {
-                for name in &line.names {
-                    ui.monospace(*name);
-                }
-            },
-            RichText::new(press_text(line.press_frames)).monospace(),
-            RichText::new(hold_text(line.hold_frames)).monospace(),
-        );
+        ui.monospace(row_text(&line.names, line.press_frames, line.hold_frames));
     });
 }
 
-/// 名前の欄と F の 2 欄を割り付ける。
-fn show_columns(ui: &mut Ui, names: impl FnOnce(&mut Ui), press: RichText, hold: RichText) {
-    ui.horizontal(|ui| {
-        let row_height = ui.spacing().interact_size.y;
-        let names_width = (ui.available_width() - 2.0 * FRAMES_COLUMN_WIDTH).max(0.0);
-
-        ui.allocate_ui_with_layout(
-            Vec2::new(names_width, row_height),
-            Layout::left_to_right(Align::Center),
-            names,
-        );
-
-        show_frames_column(ui, row_height, press);
-        show_frames_column(ui, row_height, hold);
-    });
+/// 1 行ぶんの文字列。
+///
+/// 3 つの欄を別々の widget にしない。egui は要求した幅ではなく実際に使った矩形のぶんだけ
+/// cursor を進めるので、名前の欄に固定幅を渡しても名前が長い行で F の列が右へずれる。
+/// 等幅の 1 行に組めば、割り付けを egui に任せずに桁が揃う。
+pub fn row_text(names: &[&str], press_frames: Option<f64>, hold_frames: f64) -> String {
+    columns(
+        &names.join(" "),
+        &press_text(press_frames),
+        &hold_text(hold_frames),
+    )
 }
 
-fn show_frames_column(ui: &mut Ui, row_height: f32, text: RichText) {
-    ui.allocate_ui_with_layout(
-        Vec2::new(FRAMES_COLUMN_WIDTH, row_height),
-        Layout::right_to_left(Align::Center),
-        |ui| {
-            ui.label(text);
-        },
-    );
+/// 名前を左詰め、F の 2 欄を右詰めにして 1 行にする。
+fn columns(names: &str, press: &str, hold: &str) -> String {
+    format!("{names:<NAMES_WIDTH$}{press:>FRAMES_WIDTH$}{hold:>FRAMES_WIDTH$}")
 }
 
 /// 押下 F の表示。押されていない区間では空欄にする。

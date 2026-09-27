@@ -7,8 +7,8 @@ use frametap::history::{History, DEFAULT_RETAIN_US, DEFAULT_TRIAL_GAP_US};
 use frametap::report_decode::{Buttons, Direction};
 use frametap::timeline::{EventKind, InputEvent, Target};
 use frametap::ui::{
-    hold_text, lines, press_text, recent_trials, show, Settings, Status, DEFAULT_TRIALS_SHOWN,
-    HOLD_OVERFLOW_TEXT,
+    hold_text, lines, press_text, recent_trials, row_text, show, Settings, Status,
+    DEFAULT_TRIALS_SHOWN, HOLD_OVERFLOW_TEXT,
 };
 
 /// 60fps の 1F。
@@ -56,11 +56,88 @@ fn frames_count_from_the_trial_origin() {
 
     let lines = lines(&history.recent_trials(5), &Settings::default());
     assert_eq!(lines.len(), 2);
-    assert_eq!(lines[0].names, vec!["L1", "D↑"]);
+    assert_eq!(lines[0].names, vec!["L1", "DP8"]);
     assert_eq!(lines[0].press_frames, Some(0.0));
-    assert_eq!(lines[1].names, vec!["L1", "D↑", "R1"]);
+    assert_eq!(lines[1].names, vec!["L1", "DP8", "R1"]);
     assert_eq!(press_text(lines[1].press_frames), "1.0");
     assert_eq!(hold_text(lines[1].hold_frames), "2.0");
+}
+
+/// 既定では何も押していない区間を行にしない。間合いは押下 F の差で読む。
+#[test]
+fn released_intervals_do_not_become_lines() {
+    let mut history = history();
+    history.push(&[press(Target::Button(Buttons::L1), 0)], 0);
+    history.push(&[release(Target::Button(Buttons::L1), FRAME_US)], FRAME_US);
+    history.push(
+        &[press(Target::Button(Buttons::R1), 5 * FRAME_US)],
+        5 * FRAME_US,
+    );
+    history.push(&[], 6 * FRAME_US);
+
+    let lines = lines(&history.recent_trials(1), &Settings::default());
+
+    assert_eq!(lines.len(), 2);
+    assert_eq!(lines[0].names, vec!["L1"]);
+    assert_eq!(lines[1].names, vec!["R1"]);
+    // 5F 空けたことは押下 F の差に出る。
+    assert_eq!(press_text(lines[0].press_frames), "0.0");
+    assert_eq!(press_text(lines[1].press_frames), "5.0");
+}
+
+/// show_released を立てると離した区間も行になる。既定との対になる。
+#[test]
+fn show_released_brings_the_released_intervals_back() {
+    let mut history = history();
+    history.push(&[press(Target::Button(Buttons::L1), 0)], 0);
+    history.push(&[release(Target::Button(Buttons::L1), FRAME_US)], FRAME_US);
+    history.push(
+        &[press(Target::Button(Buttons::R1), 5 * FRAME_US)],
+        5 * FRAME_US,
+    );
+    history.push(&[], 6 * FRAME_US);
+
+    let settings = Settings {
+        show_released: true,
+        ..Settings::default()
+    };
+    let lines = lines(&history.recent_trials(1), &settings);
+
+    assert_eq!(lines.len(), 3);
+    assert!(lines[1].names.is_empty());
+    assert_eq!(press_text(lines[1].press_frames), "");
+    assert_eq!(hold_text(lines[1].hold_frames), "4.0");
+}
+
+/// 1 行の文字列は列の位置が名前の長さで動かない。同時押しでも F の桁が揃う。
+#[test]
+fn a_row_keeps_its_columns_when_names_grow() {
+    let one = row_text(&["L1"], Some(0.0), 1.0);
+    let many = row_text(&["L1", "DP8", "R1"], Some(12.5), 99.0);
+
+    assert_eq!(one.len(), many.len());
+    // 名前の欄は左詰め、F の 2 欄は右詰めで同じ位置に来る。
+    assert!(one.starts_with("L1 "), "{one}");
+    assert!(one.ends_with("1.0"), "{one}");
+    assert!(many.starts_with("L1 DP8 R1 "), "{many}");
+    assert!(many.ends_with("99.0"), "{many}");
+}
+
+/// 方向は numpad 表記で出す。十字キーと左スティックを接頭辞で分ける。
+#[test]
+fn directions_use_numpad_names() {
+    let mut history = history();
+    history.push(
+        &[
+            press(Target::Dpad(Direction::SW), 0),
+            press(Target::Stick(Direction::E), 0),
+        ],
+        0,
+    );
+
+    let lines = lines(&history.recent_trials(1), &Settings::default());
+
+    assert_eq!(lines[0].names, vec!["DP1", "LS6"]);
 }
 
 /// 長押しの間は行が増えず、最後の行の持続 F だけが伸びる。
@@ -105,20 +182,17 @@ fn lines_run_oldest_first_and_mark_each_trial_head() {
     let trials = history.recent_trials(DEFAULT_TRIALS_SHOWN);
     let lines = lines(&trials, &Settings::default());
 
-    // 各試行は押下の行と離した後の空の行を持つ。
+    // 離した後の区間は行にならないので、各試行は押下の 1 行だけになる。
     assert_eq!(
         lines
             .iter()
             .map(|line| line.starts_trial)
             .collect::<Vec<bool>>(),
-        vec![true, false, true, false, true, false],
+        vec![true, true, true],
     );
     // 古い試行が先。試行内の押下 F は起点からの差なので、どの試行でも 0.0 から始まる。
     assert_eq!(lines[0].press_frames, Some(0.0));
     assert_eq!(lines[0].names, vec!["Cross"]);
-    // 空の区間は名前も押下 F も持たず、長さだけを出す。
-    assert!(lines[1].names.is_empty());
-    assert_eq!(press_text(lines[1].press_frames), "");
 }
 
 /// 試行数の上限は [`frametap::ui::recent_trials`] が [`Settings`] から読む。新しい方を残す。
