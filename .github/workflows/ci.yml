@@ -22,9 +22,10 @@ jobs:
           }
 
       # rustup が rust-toolchain.toml を読むため、ここで版を固定しない。
+      # llvm-tools は hid_probe.exe の import を読む llvm-readobj のために入れる。
       - name: Install components
         if: steps.detect.outputs.exists == 'true'
-        run: rustup component add clippy rustfmt
+        run: rustup component add clippy rustfmt llvm-tools
 
       - name: Format
         if: steps.detect.outputs.exists == 'true'
@@ -37,3 +38,105 @@ jobs:
       - name: Test
         if: steps.detect.outputs.exists == 'true'
         run: cargo test
+
+      # 配布先に VC++ 再頒布可能パッケージのインストールを要求しないよう CRT を静的リンクする。
+      # hidapi は cc 経由で C を混ぜるが、cc は crt-static を見て /MT に切り替える。
+      - name: Build hid_probe
+        if: steps.detect.outputs.exists == 'true'
+        env:
+          RUSTFLAGS: -C target-feature=+crt-static
+        run: cargo build --bin hid_probe --release
+
+      # import を読む道具に llvm-readobj を選ぶ。dumpbin は Visual Studio の版とエディションで
+      # 置き場所が変わるが、llvm-readobj は rustup が toolchain 配下の固定位置に置く。
+      - name: Package hid_probe
+        if: steps.detect.outputs.exists == 'true'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $exePath = 'target/release/hid_probe.exe'
+          $stageDir = 'dist'
+
+          # Windows 10 / 11 に標準で入る DLL。api-ms-win-* (UCRT を含む) は OS の一部。
+          # ここに無い import は配布先に無い可能性があるため exe に同梱する。
+          $systemDllNames = @(
+            'advapi32.dll', 'bcrypt.dll', 'cfgmgr32.dll', 'crypt32.dll', 'hid.dll',
+            'kernel32.dll', 'kernelbase.dll', 'msvcrt.dll', 'ntdll.dll', 'ole32.dll',
+            'oleaut32.dll', 'powrprof.dll', 'secur32.dll', 'setupapi.dll', 'shell32.dll',
+            'user32.dll', 'userenv.dll', 'winmm.dll', 'ws2_32.dll'
+          )
+
+          $sysroot = (rustc --print sysroot).Trim()
+          $readobj = Get-ChildItem -Path (Join-Path $sysroot 'lib/rustlib/*/bin/llvm-readobj.exe') |
+            Select-Object -First 1
+          if (-not $readobj) {
+            throw "llvm-readobj が $sysroot 配下に無い"
+          }
+
+          # --coff-imports は Import と DelayImport のブロックを出し、各ブロックの Name 行が DLL 名になる。
+          $readobjOutput = & $readobj.FullName --coff-imports $exePath
+          if ($LASTEXITCODE -ne 0) {
+            throw "llvm-readobj が失敗した (exit $LASTEXITCODE)"
+          }
+
+          $importedDllNames = @($readobjOutput |
+            Select-String -Pattern '^\s+Name:\s+(\S+)$' |
+            ForEach-Object { $_.Matches[0].Groups[1].Value } |
+            Sort-Object -Unique)
+
+          # Windows の exe は必ず kernel32 等を import する。0 件なら読み取りが壊れている。
+          if ($importedDllNames.Count -eq 0) {
+            Write-Host $readobjOutput
+            throw "import が 1 件も取れなかった"
+          }
+
+          New-Item -ItemType Directory -Force -Path $stageDir | Out-Null
+          Copy-Item -Path $exePath -Destination $stageDir -Force
+
+          # 配布先に無い可能性のある DLL は、PATH と VC 再頒布ディレクトリから探して artifact に入れる。
+          $vcRedistGlob = 'C:\Program Files*\Microsoft Visual Studio\*\*\VC\Redist\MSVC\*\x64\Microsoft.VC*.CRT'
+          $vcRedistDirs = Get-ChildItem -Path $vcRedistGlob -Directory -ErrorAction SilentlyContinue
+          $searchDirs = @($env:PATH -split ';') + @($vcRedistDirs | ForEach-Object { $_.FullName })
+
+          Write-Host 'hid_probe.exe が import する DLL:'
+          $unresolved = @()
+          foreach ($name in $importedDllNames) {
+            $lowered = $name.ToLowerInvariant()
+            if ($systemDllNames -contains $lowered -or $lowered -like 'api-ms-win-*') {
+              Write-Host "  $name (system)"
+              continue
+            }
+
+            $resolved = $searchDirs |
+              Where-Object { $_ } |
+              ForEach-Object { Join-Path $_ $name } |
+              Where-Object { Test-Path -Path $_ -PathType Leaf } |
+              Select-Object -First 1
+
+            if ($resolved) {
+              Copy-Item -Path $resolved -Destination $stageDir -Force
+              Write-Host "  $name (同梱: $resolved)"
+            } else {
+              Write-Host "  $name (見つからないため同梱できない)"
+              $unresolved += $name
+            }
+          }
+
+          if ($unresolved.Count -gt 0) {
+            throw "配布先に無い可能性のある DLL を同梱できなかった: $($unresolved -join ', ')"
+          }
+
+          Write-Host ''
+          Write-Host 'artifact の中身:'
+          Get-ChildItem -Path $stageDir | ForEach-Object {
+            Write-Host "  $($_.Name) ($($_.Length) bytes)"
+          }
+
+      - name: Upload hid_probe
+        if: steps.detect.outputs.exists == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: hid_probe-windows-x64
+          path: dist/
+          if-no-files-found: error
