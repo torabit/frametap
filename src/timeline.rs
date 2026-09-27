@@ -90,10 +90,10 @@ const STICK_DIRECTIONS: [Direction; 8] = [
 ];
 
 /// 十字キーの方向名。並びは [`direction_index`] に合わせる。
-const DPAD_NAMES: [&str; 8] = ["D↑", "D↗", "D→", "D↘", "D↓", "D↙", "D←", "D↖"];
+const DPAD_NAMES: [&str; 8] = ["DP8", "DP9", "DP6", "DP3", "DP2", "DP1", "DP4", "DP7"];
 
 /// 左スティックの方向名。並びは [`direction_index`] に合わせる。
-const STICK_NAMES: [&str; 8] = ["L↑", "L↗", "L→", "L↘", "L↓", "L↙", "L←", "L↖"];
+const STICK_NAMES: [&str; 8] = ["LS8", "LS9", "LS6", "LS3", "LS2", "LS1", "LS4", "LS7"];
 
 /// ボタン名。単一ビットの値だけを引ける。
 const BUTTON_NAMES: [(Buttons, &str); 14] = [
@@ -267,7 +267,7 @@ impl Timeline {
         let deviation = (estimated - nominal).abs() / nominal;
         if deviation >= SCALE_WARNING_RATIO {
             self.scale_warning = Some(format!(
-                "デバイス時刻の単位が公称値から {:.0}% 外れている (推定 {estimated:.3}µs/tick、公称 {nominal:.2}µs/tick)",
+                "device clock unit is {:.0}% off nominal (estimated {estimated:.3} us/tick, nominal {nominal:.2} us/tick)",
                 deviation * 100.0
             ));
         }

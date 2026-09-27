@@ -78,7 +78,7 @@ mod platform {
 
     /// 最初に見つかった対象デバイスを読み取り専用で開く。
     pub fn open() -> Result<Connection, String> {
-        let api = HidApi::new().map_err(|err| format!("HidApi の初期化に失敗した: {err}"))?;
+        let api = HidApi::new().map_err(|err| format!("failed to initialize HidApi: {err}"))?;
 
         let (product_id, name, kind) = api
             .device_list()
@@ -89,11 +89,11 @@ mod platform {
                     .find(|(product_id, _, _)| *product_id == info.product_id())
                     .copied()
             })
-            .ok_or_else(|| format!("対象デバイスが見つからない (VID {SONY_VENDOR_ID:#06X})"))?;
+            .ok_or_else(|| format!("no target device found (VID {SONY_VENDOR_ID:#06X})"))?;
 
         let device = api
             .open(SONY_VENDOR_ID, product_id)
-            .map_err(|err| format!("{name} を開けない: {err}"))?;
+            .map_err(|err| format!("cannot open {name}: {err}"))?;
 
         Ok(Connection {
             device,
@@ -120,7 +120,7 @@ mod platform {
             let len = self
                 .device
                 .read_timeout(&mut buffer, BLOCK_UNTIL_REPORT)
-                .map_err(|err| format!("{} の読み取りに失敗した: {err}", self.name))?;
+                .map_err(|err| format!("read failed on {}: {err}", self.name))?;
 
             Ok(Report {
                 buffer,
@@ -137,7 +137,7 @@ mod platform {
         let mut ticks = 0i64;
         // SAFETY: ticks はスタック上の有効な i64。
         unsafe { QueryPerformanceCounter(&mut ticks) }
-            .map_err(|err| format!("QueryPerformanceCounter に失敗した: {err}"))?;
+            .map_err(|err| format!("QueryPerformanceCounter failed: {err}"))?;
 
         Ok((i128::from(ticks) * 1_000_000 / i128::from(frequency)) as u64)
     }
@@ -150,9 +150,9 @@ mod platform {
         let mut frequency = 0i64;
         // SAFETY: frequency はスタック上の有効な i64。
         unsafe { QueryPerformanceFrequency(&mut frequency) }
-            .map_err(|err| format!("QueryPerformanceFrequency に失敗した: {err}"))?;
+            .map_err(|err| format!("QueryPerformanceFrequency failed: {err}"))?;
         if frequency <= 0 {
-            return Err(format!("QPC の周波数が {frequency} で使えない"));
+            return Err(format!("unusable QPC frequency: {frequency}"));
         }
 
         Ok(*QPC_FREQUENCY.get_or_init(|| frequency))
@@ -168,7 +168,7 @@ mod platform {
     pub enum Connection {}
 
     pub fn open() -> Result<Connection, String> {
-        Err("HID の読み取りは Windows でのみ動く".to_owned())
+        Err("HID reading works on Windows only".to_owned())
     }
 
     impl Connection {

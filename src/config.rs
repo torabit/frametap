@@ -26,6 +26,10 @@ pub const DEFAULT_STICK_DEADZONE: f32 = 0.5;
 /// 縦リストに積む試行数の既定値。
 pub const DEFAULT_TRIALS_SHOWN: usize = 5;
 
+/// 離した区間を行にするかの既定値。既定で出さないのは、その行が持続 F しか持たず、
+/// 読む行数だけが倍になるため。間合いは押下 F の差で読める。
+pub const DEFAULT_SHOW_RELEASED: bool = false;
+
 /// 設定の値。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Config {
@@ -37,6 +41,8 @@ pub struct Config {
     pub stick_deadzone: f32,
     /// 縦リストに積む試行数。
     pub trials_shown: usize,
+    /// 何も押していない区間を行にするか。
+    pub show_released: bool,
 }
 
 impl Default for Config {
@@ -46,6 +52,7 @@ impl Default for Config {
             trial_gap_ms: DEFAULT_TRIAL_GAP_MS,
             stick_deadzone: DEFAULT_STICK_DEADZONE,
             trials_shown: DEFAULT_TRIALS_SHOWN,
+            show_released: DEFAULT_SHOW_RELEASED,
         }
     }
 }
@@ -81,7 +88,7 @@ pub fn read(path: &Path) -> Loaded {
         // 置いてあるのに読めないのは権限か壊れた文字である。既定値で起動は続けるが黙らない。
         Err(err) => Loaded {
             config: Config::default(),
-            warnings: vec![format!("{} を読めない: {err}", path.display())],
+            warnings: vec![format!("cannot read {}: {err}", path.display())],
         },
     }
 }
@@ -102,20 +109,20 @@ pub fn parse(text: &str) -> Loaded {
         // section は読まない。黙って飛ばすと、中に書いたキーが効かない理由が分からない。
         if line.starts_with('[') {
             warnings.push(format!(
-                "{number} 行目: section を読まない。`{line}` を無視した"
+                "line {number}: sections are not read, ignored `{line}`"
             ));
             continue;
         }
 
         let Some((key, value)) = line.split_once('=') else {
-            warnings.push(format!("{number} 行目: `=` が無い。`{line}` を無視した"));
+            warnings.push(format!("line {number}: no `=`, ignored `{line}`"));
             continue;
         };
         let (key, value) = (key.trim(), value.trim());
 
         if seen.contains(&key) {
             warnings.push(format!(
-                "{number} 行目: `{key}` が 2 回ある。後ろの値を使う"
+                "line {number}: `{key}` appears twice, using the last value"
             ));
         }
         seen.push(key);
@@ -165,7 +172,17 @@ pub fn parse(text: &str) -> Loaded {
                     &DEFAULT_TRIALS_SHOWN.to_string(),
                 )),
             },
-            _ => warnings.push(format!("{number} 行目: `{key}` は知らないキーである")),
+            "show_released" => match value {
+                "true" => config.show_released = true,
+                "false" => config.show_released = false,
+                _ => warnings.push(not_a_boolean(
+                    number,
+                    key,
+                    value,
+                    &DEFAULT_SHOW_RELEASED.to_string(),
+                )),
+            },
+            _ => warnings.push(format!("line {number}: unknown key `{key}`")),
         }
     }
 
@@ -186,11 +203,15 @@ fn strip_comment(line: &str) -> &str {
 }
 
 fn not_a_number(number: usize, key: &str, value: &str, fallback: &str) -> String {
-    format!("{number} 行目: `{key}` の `{value}` を数として読めない。既定の {fallback} を使う")
+    format!("line {number}: `{key}` = `{value}` is not a number, using default {fallback}")
+}
+
+fn not_a_boolean(number: usize, key: &str, value: &str, fallback: &str) -> String {
+    format!("line {number}: `{key}` = `{value}` is not true or false, using default {fallback}")
 }
 
 fn out_of_range(number: usize, key: &str, value: &str, fallback: &str) -> String {
-    format!("{number} 行目: `{key}` の `{value}` は受け付けない。既定の {fallback} を使う")
+    format!("line {number}: `{key}` = `{value}` is out of range, using default {fallback}")
 }
 
 #[cfg(test)]
@@ -291,6 +312,28 @@ mod tests {
             );
             assert_eq!(loaded.warnings.len(), 1, "{text}");
         }
+    }
+
+    #[test]
+    fn show_released_reads_true_and_false() {
+        assert!(parse("show_released = true\n").config.show_released);
+        assert!(!parse("show_released = false\n").config.show_released);
+        assert!(parse("show_released = true\n").warnings.is_empty());
+    }
+
+    /// 既定は非表示。離した区間の行は持続 F しか持たず、読む列を増やすだけになる。
+    #[test]
+    fn show_released_defaults_to_false() {
+        assert!(!Config::default().show_released);
+    }
+
+    #[test]
+    fn a_show_released_that_is_not_a_boolean_keeps_the_default_and_warns() {
+        let loaded = parse("show_released = yes\n");
+
+        assert!(!loaded.config.show_released);
+        assert_eq!(loaded.warnings.len(), 1);
+        assert!(loaded.warnings[0].contains("show_released"));
     }
 
     /// 0 件だと画面に何も出ない。設定として通さない。
