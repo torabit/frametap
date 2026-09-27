@@ -1,0 +1,10 @@
+[package]
+name = "frametap"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+
+[target."cfg(windows)".dependencies]
+hidapi = "2.6.7"
+windows = { version = "0.62.2", features = ["Win32_System_Performance"] }

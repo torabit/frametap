@@ -1,0 +1,17 @@
+# cargo coupling --check --min-grade=B --max-circular=0 ./src の設定。
+
+# src/bin は調査用バイナリを置く場所で、設計 spec のモジュール分割の対象外。
+# 実機確認のために一時的に hidapi と windows を直接触るので、解析から外す。
+[analysis]
+exclude = ["src/bin/*", "src/bin/**"]
+
+# 以下のモジュールはまだ存在しない。分類を先に固定し、実装時に判定が効く状態にしておく。
+
+# hid_source.rs は hidapi と OS API に接する唯一の層。外部都合で最も変わりやすい。
+[volatility]
+high = ["src/hid_source.rs"]
+
+# report_decode.rs は生バイトから PadState への変換。純関数で、ここの誤りが F 数に直結する。
+# timeline.rs は PadState 列から InputEvent 列への変換、デバイス時刻の校正と wrap 処理。
+[subdomains]
+core = ["src/report_decode.rs", "src/timeline.rs"]
