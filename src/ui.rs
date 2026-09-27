@@ -262,9 +262,11 @@ fn show_column_headers(ui: &mut Ui) {
     )));
 }
 
-/// 見出しの文字。数字より小さく弱くして、行の数字から視線を奪わない。
+/// 見出しの文字。薄くして行の数字から視線を奪わない。
+///
+/// 小さくはしない。等幅でも字送りが本文と変わるので、見出しだけ列がずれる。
 fn header_text(text: &str) -> RichText {
-    RichText::new(text).monospace().small().weak()
+    RichText::new(text).monospace().weak()
 }
 
 fn show_line(ui: &mut Ui, line: &Line) {
