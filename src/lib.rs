@@ -5,8 +5,10 @@
 //! 他のモジュールは実機なしでテストできる。
 
 pub mod app;
+pub mod config;
 pub mod hid_source;
 pub mod history;
+pub mod panic_report;
 pub mod report_decode;
 pub mod timeline;
 pub mod ui;

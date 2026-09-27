@@ -229,7 +229,11 @@ fn show_runs_without_a_window() {
         ..Status::connected("DualSense".to_owned())
     };
 
+    // 設定の警告は接続の状態と無関係に出る。空の場合と出す場合の両方を通す。
+    let notices = vec!["1 行目: `fsp` は知らないキーである".to_owned()];
     for status in [connected, Status::default()] {
-        egui::__run_test_ui(|ui| show(ui, &trials, &status, &Settings::default()));
+        for notices in [[].as_slice(), notices.as_slice()] {
+            egui::__run_test_ui(|ui| show(ui, &trials, &status, &Settings::default(), notices));
+        }
     }
 }
