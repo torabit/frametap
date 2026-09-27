@@ -26,6 +26,20 @@ pub enum Target {
     Stick(Direction),
 }
 
+impl Target {
+    /// 画面に出す名前。
+    ///
+    /// 十字キーは `D`、左スティックは `L` を頭に付ける。同じ方向でもどちらで入れたかが
+    /// 読めないと、ずれの原因を切り分けられない。
+    pub fn display_name(self) -> &'static str {
+        match self {
+            Target::Button(button) => button_name(button),
+            Target::Dpad(direction) => DPAD_NAMES[direction_index(direction)],
+            Target::Stick(direction) => STICK_NAMES[direction_index(direction)],
+        }
+    }
+}
+
 /// 押下または離しの 1 件。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InputEvent {
@@ -74,6 +88,33 @@ const STICK_DIRECTIONS: [Direction; 8] = [
     Direction::S,
     Direction::SE,
 ];
+
+/// 十字キーの方向名。並びは [`direction_index`] に合わせる。
+const DPAD_NAMES: [&str; 8] = ["D↑", "D↗", "D→", "D↘", "D↓", "D↙", "D←", "D↖"];
+
+/// 左スティックの方向名。並びは [`direction_index`] に合わせる。
+const STICK_NAMES: [&str; 8] = ["L↑", "L↗", "L→", "L↘", "L↓", "L↙", "L←", "L↖"];
+
+/// ボタン名。単一ビットの値だけを引ける。
+const BUTTON_NAMES: [(Buttons, &str); 14] = [
+    (Buttons::SQUARE, "Square"),
+    (Buttons::CROSS, "Cross"),
+    (Buttons::CIRCLE, "Circle"),
+    (Buttons::TRIANGLE, "Triangle"),
+    (Buttons::L1, "L1"),
+    (Buttons::R1, "R1"),
+    (Buttons::L2, "L2"),
+    (Buttons::R2, "R2"),
+    (Buttons::CREATE, "Create"),
+    (Buttons::OPTIONS, "Options"),
+    (Buttons::L3, "L3"),
+    (Buttons::R3, "R3"),
+    (Buttons::PS, "PS"),
+    (Buttons::TOUCHPAD, "Pad"),
+];
+
+/// 名前が引けなかったボタンに出す印。[`Target::Button`] に複数ビットの値を入れた場合に出る。
+const UNKNOWN_BUTTON_NAME: &str = "?";
 
 /// 方向を [`Target`] に包む構築子。十字キーとスティックで同じ差分処理を使うために型を揃える。
 type DirectionTarget = fn(Direction) -> Target;
@@ -321,6 +362,27 @@ impl Timeline {
             Some(current)
         }
     }
+}
+
+/// 方向名の表を引く添字。
+fn direction_index(direction: Direction) -> usize {
+    match direction {
+        Direction::N => 0,
+        Direction::NE => 1,
+        Direction::E => 2,
+        Direction::SE => 3,
+        Direction::S => 4,
+        Direction::SW => 5,
+        Direction::W => 6,
+        Direction::NW => 7,
+    }
+}
+
+fn button_name(button: Buttons) -> &'static str {
+    BUTTON_NAMES
+        .iter()
+        .find(|(flag, _)| *flag == button)
+        .map_or(UNKNOWN_BUTTON_NAME, |(_, name)| *name)
 }
 
 fn nominal_us_per_tick(device: Device) -> f64 {
@@ -973,5 +1035,35 @@ mod tests {
         ] {
             assert_eq!(timeline.quantize_stick(raw, None), expected, "{raw:?}");
         }
+    }
+
+    /// 表示名は入力ごとに違い、どの入力にも付いている。
+    /// 十字キーとスティックが同じ名前になると、画面でどちらを入れたか読めない。
+    #[test]
+    fn display_names_are_known_and_unique() {
+        let targets: Vec<Target> = STICK_DIRECTIONS
+            .iter()
+            .flat_map(|direction| [Target::Dpad(*direction), Target::Stick(*direction)])
+            .chain(Buttons::all().iter().map(Target::Button))
+            .collect();
+
+        for target in &targets {
+            assert_ne!(target.display_name(), UNKNOWN_BUTTON_NAME, "{target:?}");
+        }
+
+        let mut names: Vec<&str> = targets.iter().map(|target| target.display_name()).collect();
+        let total = names.len();
+        names.sort_unstable();
+        names.dedup();
+        assert_eq!(names.len(), total);
+    }
+
+    /// 単一ビットでない値には名前が無い。
+    #[test]
+    fn a_multi_bit_button_has_no_name() {
+        assert_eq!(
+            Target::Button(Buttons::L1 | Buttons::R1).display_name(),
+            UNKNOWN_BUTTON_NAME
+        );
     }
 }
