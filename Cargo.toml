@@ -1,6 +1,6 @@
 [package]
 name = "frametap"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 license = "MIT"
 description = "Frame-by-frame controller input display for Windows"
