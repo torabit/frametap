@@ -165,8 +165,14 @@ pub fn recent_trials(history: &History, settings: &Settings) -> Vec<Trial> {
 
 /// ヘッダと縦リストを描く。`trials` は [`recent_trials`] の戻り値、
 /// つまり新しい順に並んだ試行である。
-pub fn show(ui: &mut Ui, trials: &[Trial], status: &Status, settings: &Settings) {
-    show_header(ui, status, settings);
+pub fn show(
+    ui: &mut Ui,
+    trials: &[Trial],
+    status: &Status,
+    settings: &Settings,
+    notices: &[String],
+) {
+    show_header(ui, status, settings, notices);
     ui.separator();
 
     // 見出しはスクロール領域の外に置く。リストが流れても列の意味が画面から消えない。
@@ -191,7 +197,7 @@ pub fn show(ui: &mut Ui, trials: &[Trial], status: &Status, settings: &Settings)
 ///
 /// 但し書きは条件付きで隠さない。1F ずれを読んでいる最中に、表示の幅が
 /// どこから来ているかを思い出せる状態にしておく。
-fn show_header(ui: &mut Ui, status: &Status, settings: &Settings) {
+fn show_header(ui: &mut Ui, status: &Status, settings: &Settings, notices: &[String]) {
     match &status.device_name {
         Some(name) => ui.label(format!("接続: {name}")),
         None => ui.label(
@@ -221,6 +227,11 @@ fn show_header(ui: &mut Ui, status: &Status, settings: &Settings) {
         "{:.0}fps の独自グリッドで数えるので、ゲーム内のフレーム数とは最大 1F ずれる",
         settings.fps.max(MIN_FPS)
     ));
+
+    // 設定が効かなかったことは、隠すと画面から区別できない。出したままにする。
+    for notice in notices {
+        ui.label(RichText::new(notice).color(Color32::LIGHT_RED));
+    }
 }
 
 /// どの欄が何かを示す見出し。行と同じ割り付けを使うので、列とずれない。
