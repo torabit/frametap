@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Detect Cargo.toml
+        id: detect
+        shell: pwsh
+        run: |
+          if (Test-Path -Path 'Cargo.toml' -PathType Leaf) {
+            "exists=true" >> $env:GITHUB_OUTPUT
+          } else {
+            "exists=false" >> $env:GITHUB_OUTPUT
+          }
+
+      # rustup が rust-toolchain.toml を読むため、ここで版を固定しない。
+      - name: Install components
+        if: steps.detect.outputs.exists == 'true'
+        run: rustup component add clippy rustfmt
+
+      - name: Format
+        if: steps.detect.outputs.exists == 'true'
+        run: cargo fmt --check
+
+      - name: Clippy
+        if: steps.detect.outputs.exists == 'true'
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Test
+        if: steps.detect.outputs.exists == 'true'
+        run: cargo test
